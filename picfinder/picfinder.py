@@ -9,6 +9,7 @@ from collections import OrderedDict
 
 from hoshino import Service
 from hoshino.typing import CQEvent, MessageSegment
+from hoshino.util import pic2b64
 
 sv = Service('picfinder', help_='''
 [识图+图片] 查询图片来源
@@ -17,6 +18,7 @@ sv = Service('picfinder', help_='''
 api_key=""#填写你自己的api_key
 minsim='70!'#相似度下限，低于下限不显示结果
 thumbSize = (250,250)
+MAX_NUM = 10 #单次搜索最大请求次数
 
 #启用或禁用索引，1：启用，0：禁用
 index_hmags='0'#0: H-Magazines  (Last Updated: December 2010) 不完整 - 大部分被 #18 替代
@@ -75,13 +77,19 @@ async def picfinder(bot, ev: CQEvent):
     url = 'http://saucenao.com/search.php?output_type=2&numres=1&minsim='+minsim+'&dbmask='+str(db_bitmask)+'&api_key='+api_key
     files = {'file': ("image.png", imageData.getvalue())}
     imageData.close()
-    
+    await bot.send(ev, '正在搜索, 请稍等', at_sender=True)
     processResults = True
-    while True:
+    counter = 0
+    while counter <= MAX_NUM:
+        counter = counter+1
         r = requests.post(url, files=files)
         if r.status_code != 200:
             if r.status_code == 403:
-                print('Incorrect or Invalid API Key! Please Edit Script to Configure...')
+                await bot.send(ev, 'Key错误, 请联系维护者')
+                return
+            elif r.status_code == 429:
+                await bot.send(ev, '请求次数过f多, 请联系维护者')
+                return
             else:
                 print("status code: "+str(r.status_code))
         else:
@@ -117,6 +125,8 @@ async def picfinder(bot, ev: CQEvent):
             if float(results['results'][0]['header']['similarity']) > float(results['header']['minimum_similarity']):
                 hit = str(results['results'][0]['header']['similarity'])
                 ext_urls = results['results'][0]['data']['ext_urls'][0]
+                thumbnail_url = results['results'][0]['header']['thumbnail']
+                thumbnail_image = str(MessageSegment.image(pic2b64(Image.open(BytesIO(get_pic(thumbnail_url))))))
                 service_name = ''
                 illust_id = 0
                 member_id = -1
@@ -234,14 +244,14 @@ async def picfinder(bot, ev: CQEvent):
                 try:
                     if member_id >= 0:
                         if author_name:
-                            await bot.send(ev, '相似度:'+hit+'\n来源:'+service_name+'\n标题:'+title+'\n作者:'+author_name+'('+str(member_id)+')'+'\n编号:'+str(illust_id)+page_string+'\nurl:'+ext_urls)
+                            await bot.send(ev, thumbnail_image+'\n相似度:'+hit+'\n来源:'+service_name+'\n标题:'+title+'\n作者:'+author_name+'('+str(member_id)+')'+'\n编号:'+str(illust_id)+page_string+'\nurl:'+ext_urls)
                         else:
-                            await bot.send(ev, '相似度:'+hit+'\n来源:'+service_name+'\n标题:'+title+'\n编号:'+str(illust_id)+page_string+'\nurl:'+ext_urls)
+                            await bot.send(ev, thumbnail_image+'\n相似度:'+hit+'\n来源:'+service_name+'\n标题:'+title+'\n编号:'+str(illust_id)+page_string+'\nurl:'+ext_urls)
                     else:
                         if author_name:
-                            await bot.send(ev, '相似度:'+hit+'\n来源:'+service_name+'\n标题:'+title+'\n作者:'+author_name+'\n编号:'+str(illust_id)+page_string+'\nurl:'+ext_urls)
+                            await bot.send(ev, thumbnail_image+'\n相似度:'+hit+'\n来源:'+service_name+'\n标题:'+title+'\n作者:'+author_name+'\n编号:'+str(illust_id)+page_string+'\nurl:'+ext_urls)
                         else:
-                            await bot.send(ev, '相似度:'+hit+'\n来源:'+service_name+'\n标题:'+title+'\n编号:'+str(illust_id)+page_string+'\nurl:'+ext_urls)
+                            await bot.send(ev, thumbnail_image+'\n相似度:'+hit+'\n来源:'+service_name+'\n标题:'+title+'\n编号:'+str(illust_id)+page_string+'\nurl:'+ext_urls)
                 except Exception as e:
                     print(e)
                 
